@@ -67,15 +67,3 @@ frontend/
    # Expose to local network (for testing on mobile devices)
    npm run dev -- --host
    ```
-
-## Deployment (Vercel)
-
-1. Import the GitHub repository into **Vercel** and set the **Root Directory** to `frontend`.
-2. Add the environment variable:
-   - `VITE_API_URL`: Public URL of your deployed backend (e.g., `https://your-backend.onrender.com`).
-3. Ensure `frontend/vercel.json` is present so client-side routes work properly on page refresh:
-   ```json
-   {
-     "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
-   }
-   ```
