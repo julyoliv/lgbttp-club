@@ -1,229 +1,202 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { meetingsApi, attendancesApi, suggestionsApi } from "../api/client";
+import { useState, useEffect } from "react";
+import { meetingsApi, integrationsApi } from "../api/client";
 import MeetingCard from "./MeetingCard";
-import { Plus, Calendar as CalendarIcon, Trash2, Check, X } from "lucide-react";
-
-const EMPTY_WORK = { title: "", author: "", cover_url: "" };
-
-function GroupAttendance({ clubId, meetingId, currentUser }) {
-  const [attendances, setAttendances] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  const loadAttendances = useCallback(async () => {
-    setError("");
-    try {
-      const data = await attendancesApi.list(clubId, meetingId);
-      setAttendances(data.attendances || []);
-    } catch (err) {
-      console.error(err);
-      setError("Erro ao carregar presenças");
-    } finally {
-      setLoading(false);
-    }
-  }, [clubId, meetingId]);
-
-  useEffect(() => {
-    loadAttendances();
-  }, [loadAttendances]);
-
-  async function handleAttendance(status) {
-    setError("");
-    try {
-      await attendancesApi.update(clubId, meetingId, status);
-      await loadAttendances();
-    } catch (err) {
-      setError(err.message || "Erro ao confirmar presença");
-    }
-  }
-
-  const myAttendance = attendances.find((a) => a.user_id === currentUser?.id);
-  const goingList = attendances.filter((a) => a.status === "going");
-
-  if (loading)
-    return <p className="text-sm text-gray-400">Carregando presenças...</p>;
-
-  return (
-    <div className="flex flex-col gap-4 w-full">
-      {error && <p className="text-xs text-red-600">{error}</p>}
-      <div className="flex flex-col sm:flex-row gap-2">
-        <button
-          type="button"
-          onClick={() => handleAttendance("going")}
-          className={`flex-1 py-2 px-4 text-sm rounded-lg border flex items-center justify-center gap-1.5 font-medium transition-colors ${myAttendance?.status === "going" ? "bg-gray-900 text-white border-gray-900 shadow-sm" : "bg-white hover:bg-gray-50 text-gray-600 border-gray-300"}`}
-        >
-          <Check size={16} /> Vou comparecer
-        </button>
-        <button
-          type="button"
-          onClick={() => handleAttendance("not_going")}
-          className={`flex-1 py-2 px-4 text-sm rounded-lg border flex items-center justify-center gap-1.5 font-medium transition-colors ${myAttendance?.status === "not_going" ? "bg-gray-600 text-white border-gray-600 shadow-sm" : "bg-white hover:bg-gray-50 text-gray-600 border-gray-300"}`}
-        >
-          <X size={16} /> Não vou
-        </button>
-      </div>
-      <div>
-        <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
-          Confirmados ({goingList.length}):
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {goingList.map((a) => (
-            <span
-              key={a.user_id}
-              className="inline-flex items-center gap-1.5 bg-gray-100 text-gray-700 px-2.5 py-1 rounded-md text-xs font-medium border border-gray-200"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-              {a.name}
-            </span>
-          ))}
-          {goingList.length === 0 && (
-            <span className="italic text-gray-400 text-xs">
-              Ninguém confirmou ainda.
-            </span>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
+import { Plus, Calendar, Upload, X, Search } from "lucide-react";
 
 export default function ClubMeetings({
   clubId,
+  clubType,
   isOwner,
-  currentUser,
-  prefilledMeeting,
-  clearPrefill,
-  club,
+  currentUserId,
+  prefilledWorks = [],
+  onClearPrefill,
 }) {
   const [meetings, setMeetings] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [formError, setFormError] = useState("");
-  const [showForm, setShowForm] = useState(Boolean(prefilledMeeting?.length));
+  const [error, setError] = useState("");
+  const [showCreateForm, setShowCreateForm] = useState(false);
 
-  const [works, setWorks] = useState(
-    prefilledMeeting && prefilledMeeting.length > 0
-      ? prefilledMeeting
-      : [{ ...EMPTY_WORK }],
-  );
-
+  const [title, setTitle] = useState("");
+  const [author, setAuthor] = useState("");
+  const [theme, setTheme] = useState("");
+  const [coverUrl, setCoverUrl] = useState("");
+  const [scheduledAt, setScheduledAt] = useState("");
   const [description, setDescription] = useState("");
-  const [date, setDate] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const fetchMeetings = useCallback(async () => {
+  // Busca no catálogo (TMDb / Google Books)
+  const [showResults, setShowResults] = useState(false);
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchingCatalog, setSearchingCatalog] = useState(false);
+
+  const isBook = clubType === "book";
+
+  useEffect(() => {
+    if (prefilledWorks && prefilledWorks.length > 0) {
+      const first = prefilledWorks[0];
+      setTitle(first.title || "");
+      setAuthor(first.author || "");
+      setCoverUrl(first.cover_url || "");
+      setShowCreateForm(true);
+    }
+  }, [prefilledWorks]);
+
+  async function fetchMeetings() {
     try {
-      const { meetings: fetched } = await meetingsApi.list(clubId);
-      setMeetings(fetched || []);
+      setLoading(true);
+      const data = await meetingsApi.list(clubId);
+      setMeetings(data.meetings || []);
     } catch (err) {
-      console.error(err);
+      setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [clubId]);
+  }
 
   useEffect(() => {
     fetchMeetings();
-  }, [fetchMeetings]);
+  }, [clubId]);
 
   useEffect(() => {
-    if (prefilledMeeting && prefilledMeeting.length > 0) {
-      setWorks(prefilledMeeting);
-      setShowForm(true);
+    if (!showResults) return;
+
+    const query = title.trim();
+    if (query.length < 2) {
+      setSearchResults([]);
+      return;
     }
-  }, [prefilledMeeting]);
 
-  function handleAddWork() {
-    setWorks((prev) => [...prev, { ...EMPTY_WORK }]);
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        setSearchingCatalog(true);
+        const data = await integrationsApi.search(clubId, query, 1, {
+          signal: controller.signal,
+        });
+        setSearchResults(data.results || []);
+      } catch (err) {
+        if (err.name !== "AbortError") {
+          setSearchResults([]);
+        }
+      } finally {
+        setSearchingCatalog(false);
+      }
+    }, 400);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [title, showResults, clubId]);
+
+  function handleSelectCatalogItem(item) {
+    setTitle(item.title || title);
+    setAuthor(item.author || author);
+    if (item.cover_url) setCoverUrl(item.cover_url);
+    setShowResults(false);
+    setSearchResults([]);
   }
 
-  function handleRemoveWork(index) {
-    setWorks((prev) => {
-      const filtered = prev.filter((_, i) => i !== index);
-      return filtered.length ? filtered : [{ ...EMPTY_WORK }];
-    });
-  }
+  function handleImageUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-  function handleWorkChange(index, field, value) {
-    setWorks((prev) =>
-      prev.map((w, i) => (i === index ? { ...w, [field]: value } : w)),
-    );
-  }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX_WIDTH = 300;
+        const MAX_HEIGHT = 450;
+        let width = img.width;
+        let height = img.height;
 
-  async function handleCreate(e) {
-    e.preventDefault();
-    setFormError("");
-    setSubmitting(true);
-    try {
-      const isoDate = new Date(date).toISOString();
-      for (const work of works) {
-        if (work.title.trim()) {
-          await meetingsApi.create(clubId, {
-            title: work.title.trim(),
-            author: work.author?.trim() || null,
-            cover_url: work.cover_url || null,
-            description: description.trim() || null,
-            scheduled_at: isoDate,
-            theme: club?.current_theme || null,
-          });
-
-          if (work.suggestionId) {
-            await suggestionsApi.choose(clubId, work.suggestionId, "created");
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
           }
         }
-      }
-      setShowForm(false);
-      setWorks([{ ...EMPTY_WORK }]);
-      setDescription("");
-      setDate("");
-      if (clearPrefill) clearPrefill();
-      await fetchMeetings();
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+
+        setCoverUrl(canvas.toDataURL("image/jpeg", 0.8));
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function resetForm() {
+    setTitle("");
+    setAuthor("");
+    setTheme("");
+    setCoverUrl("");
+    setScheduledAt("");
+    setDescription("");
+    setShowResults(false);
+    setSearchResults([]);
+  }
+
+  async function handleCreateMeeting(e) {
+    e.preventDefault();
+    setError("");
+    setSubmitting(true);
+
+    try {
+      const isoDate = new Date(scheduledAt).toISOString();
+
+      await meetingsApi.create(clubId, {
+        title: title.trim(),
+        author: author.trim() || null,
+        theme: theme.trim() || null,
+        cover_url: coverUrl || null,
+        scheduled_at: isoDate,
+        description: description.trim() || null,
+      });
+
+      resetForm();
+      setShowCreateForm(false);
+      if (onClearPrefill) onClearPrefill();
+      fetchMeetings();
     } catch (err) {
-      setFormError(err.message || "Erro ao criar encontro.");
+      setError(err.message);
     } finally {
       setSubmitting(false);
     }
   }
 
-  const sortedGroups = useMemo(() => {
-    const grouped = meetings.reduce((acc, meeting) => {
-      const dateObj = new Date(meeting.scheduled_at);
-      const themeKey = meeting.theme || "";
-      const groupKey = `${dateObj.getTime()}__${themeKey}`;
-      if (!acc[groupKey]) {
-        acc[groupKey] = {
-          key: groupKey,
-          date: dateObj,
-          meetings: [],
-        };
-      }
-      acc[groupKey].meetings.push(meeting);
-      return acc;
-    }, {});
+  function handleCancelCreate() {
+    setShowCreateForm(false);
+    resetForm();
+    if (onClearPrefill) onClearPrefill();
+  }
 
-    return Object.values(grouped).sort((a, b) => b.date - a.date);
-  }, [meetings]);
-
-  if (loading) return <p className="text-gray-500">Carregando encontros...</p>;
+  if (loading) {
+    return <p className="text-gray-500 text-sm">Carregando encontros...</p>;
+  }
 
   return (
     <div>
-      {club && (
-        <div className="mb-6 bg-gray-50 border border-gray-200 p-3 rounded-lg text-sm text-gray-700 flex items-center gap-2 font-medium">
-          {club.type === "book"
-            ? "Meta do clube: 1 livro lido por mês."
-            : "Meta do clube: 3 filmes assistidos por mês."}
-        </div>
-      )}
-
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6">
-        <h2 className="text-xl font-bold text-gray-800">Encontros</h2>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-xl font-bold text-gray-900">Encontros</h2>
         {isOwner && (
           <button
             type="button"
-            onClick={() => setShowForm((prev) => !prev)}
-            className="w-full sm:w-auto px-4 py-2.5 sm:py-2 bg-gray-900 text-white rounded-lg hover:bg-black text-sm font-medium flex items-center justify-center gap-2 shadow-sm transition-colors"
+            onClick={() =>
+              showCreateForm ? handleCancelCreate() : setShowCreateForm(true)
+            }
+            className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-black text-sm font-medium flex items-center gap-2 transition-colors"
           >
-            {showForm ? (
+            {showCreateForm ? (
               "Cancelar"
             ) : (
               <>
@@ -234,180 +207,184 @@ export default function ClubMeetings({
         )}
       </div>
 
-      {showForm && isOwner && (
+      {error && (
+        <p className="text-sm text-red-600 bg-red-50 p-3 rounded-lg mb-4">
+          {error}
+        </p>
+      )}
+
+      {showCreateForm && isOwner && (
         <form
-          onSubmit={handleCreate}
-          className="bg-white p-4 sm:p-5 rounded-xl shadow-sm border border-gray-200 mb-6 space-y-4 sm:space-y-5"
+          onSubmit={handleCreateMeeting}
+          className="bg-white p-5 rounded-xl border border-gray-200 mb-6 space-y-4 shadow-sm"
         >
-          {formError && (
-            <p className="text-red-600 text-sm bg-red-50 p-3 rounded-lg border border-red-100">
-              {formError}
-            </p>
+          {prefilledWorks?.length > 0 && (
+            <div className="bg-green-50 text-green-800 text-xs p-2.5 rounded-lg border border-green-200">
+              Obra importada das sugestões. Escolha a data para confirmar.
+            </div>
           )}
 
-          <div className="space-y-3 sm:space-y-4">
-            {works.map((work, index) => (
-              <div
-                key={work.suggestionId || index}
-                className="flex flex-col sm:flex-row gap-3 items-start sm:items-center bg-gray-50 p-3 sm:p-4 rounded-lg border border-gray-100 relative"
-              >
-                {work.cover_url && (
-                  <div className="w-20 h-28 sm:w-24 sm:h-36 shrink-0 rounded-md overflow-hidden border border-gray-200 bg-white">
-                    <img
-                      src={work.cover_url}
-                      alt={`Capa de ${work.title || "obra"}`}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                )}
-                <div className="flex-1 w-full space-y-3">
-                  <input
-                    placeholder={
-                      club?.type === "book"
-                        ? `Título do Livro ${works.length > 1 ? index + 1 : ""}`
-                        : `Nome do Filme ${works.length > 1 ? index + 1 : ""}`
-                    }
-                    value={work.title}
-                    onChange={(e) =>
-                      handleWorkChange(index, "title", e.target.value)
-                    }
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-gray-400 focus:border-gray-400"
-                    required={index === 0 || Boolean(work.author?.trim())}
+          <div className="flex flex-col sm:flex-row gap-4 items-start bg-gray-50 p-3.5 rounded-lg border border-gray-100">
+            {/* Upload e preview da capa */}
+            <div className="shrink-0 mx-auto sm:mx-0">
+              {coverUrl ? (
+                <div className="relative w-24 h-36 rounded-md overflow-hidden border border-gray-200 shadow-sm">
+                  <img
+                    src={coverUrl}
+                    alt={title || "Capa"}
+                    className="w-full h-full object-cover"
                   />
-                  <input
-                    placeholder={
-                      club?.type === "book" ? "Autor(a)" : "Diretor(a)"
-                    }
-                    value={work.author || ""}
-                    onChange={(e) =>
-                      handleWorkChange(index, "author", e.target.value)
-                    }
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-gray-400 focus:border-gray-400"
-                  />
-                </div>
-                {works.length > 1 && (
                   <button
                     type="button"
-                    onClick={() => handleRemoveWork(index)}
-                    className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors sm:self-center self-end"
-                    title="Remover obra"
+                    onClick={() => setCoverUrl("")}
+                    className="absolute top-1 right-1 bg-black/70 text-white rounded-full p-1 hover:bg-black"
+                    title="Remover capa"
                   >
-                    <Trash2 size={20} />
+                    <X size={12} />
                   </button>
-                )}
+                </div>
+              ) : (
+                <label className="w-24 h-36 flex flex-col items-center justify-center border border-dashed border-gray-300 rounded-md bg-white text-gray-500 hover:bg-gray-100 cursor-pointer text-xs text-center p-2 transition-colors">
+                  <Upload size={18} className="mb-1 text-gray-400" />
+                  <span>Adicionar capa</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleImageUpload}
+                  />
+                </label>
+              )}
+            </div>
+
+            {/* Campos da obra */}
+            <div className="flex-1 space-y-2.5 w-full relative">
+              <div className="relative">
+                <input
+                  type="text"
+                  required
+                  placeholder={isBook ? "Título do Livro" : "Título do Filme"}
+                  value={title}
+                  onFocus={() => setShowResults(true)}
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                    setShowResults(true);
+                  }}
+                  className="w-full p-2 pr-8 border border-gray-300 rounded-lg text-sm bg-white"
+                />
+                <Search
+                  size={14}
+                  className="absolute right-2.5 top-2.5 text-gray-400 pointer-events-none"
+                />
               </div>
-            ))}
-          </div>
 
-          <button
-            type="button"
-            onClick={handleAddWork}
-            className="text-sm font-medium text-gray-600 hover:text-black flex items-center gap-1"
-          >
-            <Plus size={16} /> Adicionar outra obra
-          </button>
+              {showResults &&
+                (searchingCatalog || searchResults.length > 0) && (
+                  <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                    {searchingCatalog ? (
+                      <p className="p-3 text-xs text-gray-500">
+                        Buscando no catálogo...
+                      </p>
+                    ) : (
+                      searchResults.map((item) => (
+                        <button
+                          key={`${item.external_source}-${item.external_id}`}
+                          type="button"
+                          onClick={() => handleSelectCatalogItem(item)}
+                          className="w-full text-left p-2 hover:bg-gray-50 flex items-center gap-2.5 border-b border-gray-100 last:border-b-0"
+                        >
+                          {item.cover_url ? (
+                            <img
+                              src={item.cover_url}
+                              alt={item.title}
+                              className="w-8 h-12 object-cover rounded shrink-0"
+                            />
+                          ) : (
+                            <div className="w-8 h-12 bg-gray-100 rounded shrink-0" />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-semibold text-gray-900 truncate">
+                              {item.title}{" "}
+                              {item.release_year
+                                ? `(${item.release_year})`
+                                : ""}
+                            </p>
+                            {item.author && (
+                              <p className="text-[11px] text-gray-500 truncate">
+                                {item.author}
+                              </p>
+                            )}
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
 
-          <hr className="border-gray-100" />
+              <input
+                type="text"
+                placeholder={isBook ? "Autor(a)" : "Diretor(a)"}
+                value={author}
+                onChange={(e) => setAuthor(e.target.value)}
+                className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white"
+              />
 
-          <div className="relative">
-            <input
-              type="datetime-local"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-700 pl-10 focus:ring-gray-400 focus:border-gray-400"
-              required
-            />
-            <div className="absolute left-3 top-2.5 pointer-events-none text-gray-400">
-              <CalendarIcon size={18} />
+              <input
+                type="text"
+                placeholder="Tema do ciclo (opcional)"
+                value={theme}
+                onChange={(e) => setTheme(e.target.value)}
+                className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white"
+              />
             </div>
           </div>
 
-          <textarea
-            placeholder="Descrição, local ou pauta (opcional)"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={2}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 resize-none focus:ring-gray-400 focus:border-gray-400"
-          />
+          <div className="pt-2 border-t border-gray-100 space-y-3">
+            <div className="flex items-center gap-2 border border-gray-300 rounded-lg p-2 bg-white">
+              <Calendar size={18} className="text-gray-400" />
+              <input
+                type="datetime-local"
+                required
+                value={scheduledAt}
+                onChange={(e) => setScheduledAt(e.target.value)}
+                className="w-full text-sm focus:outline-none"
+              />
+            </div>
 
-          <div className="flex justify-end pt-2">
+            <textarea
+              rows={2}
+              placeholder="Descrição, local ou pauta (opcional)"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+            />
+          </div>
+
+          <div className="flex justify-end">
             <button
               type="submit"
               disabled={submitting}
-              className="w-full sm:w-auto px-6 py-2.5 bg-gray-900 text-white rounded-lg hover:bg-black disabled:opacity-50 text-sm font-medium shadow-sm transition-colors"
+              className="px-5 py-2 bg-gray-900 text-white rounded-lg hover:bg-black disabled:opacity-50 text-sm font-medium"
             >
-              {submitting ? "Criando..." : "Salvar Encontro"}
+              {submitting ? "Salvando..." : "Salvar Encontro"}
             </button>
           </div>
         </form>
       )}
 
-      <div className="space-y-6 sm:space-y-8">
-        {sortedGroups.length === 0 ? (
-          <p className="text-gray-500 py-4 bg-white p-6 rounded-lg border text-center text-sm">
+      <div className="space-y-4">
+        {meetings.length === 0 ? (
+          <p className="text-gray-500 text-sm bg-gray-50 p-6 rounded-xl text-center border border-gray-200">
             Nenhum encontro agendado ainda.
           </p>
         ) : (
-          sortedGroups.map((group) => (
-            <div
-              key={group.key}
-              className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden"
-            >
-              <div className="bg-gray-50/80 p-4 sm:p-5 border-b border-gray-200 flex flex-col md:flex-row md:items-start justify-between gap-4 sm:gap-6">
-                <div>
-                  <h3 className="font-bold text-gray-900 text-lg sm:text-xl">
-                    {group.meetings[0]?.theme || "Encontro do Clube"}
-                  </h3>
-                  <p className="text-xs sm:text-sm text-gray-500 capitalize flex items-center gap-1.5 mt-1">
-                    <CalendarIcon size={14} className="sm:w-4 sm:h-4" />
-                    {group.date.toLocaleDateString("pt-BR", {
-                      weekday: "long",
-                      day: "2-digit",
-                      month: "long",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </p>
-                  {group.meetings.length > 1 && (
-                    <span className="inline-block mt-2 bg-gray-200 text-gray-700 text-[10px] sm:text-[11px] px-2 py-0.5 rounded font-semibold uppercase tracking-wide">
-                      {group.meetings.length} obras
-                    </span>
-                  )}
-                </div>
-
-                <div className="bg-white p-3 sm:p-4 rounded-lg border border-gray-200 shadow-sm w-full md:w-auto md:min-w-[280px]">
-                  <GroupAttendance
-                    clubId={clubId}
-                    meetingId={group.meetings[0].id}
-                    currentUser={currentUser}
-                  />
-                </div>
-              </div>
-
-              <div className="p-3 sm:p-5 space-y-2 bg-gray-50/30">
-                {group.meetings.map((meeting) => (
-                  <div key={meeting.id} className="flex items-start gap-3">
-                    {meeting.cover_url && (
-                      <div className="w-16 h-24 sm:w-20 sm:h-28 shrink-0 rounded-md overflow-hidden border border-gray-200 bg-white shadow-sm">
-                        <img
-                          src={meeting.cover_url}
-                          alt={`Capa de ${meeting.title}`}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <MeetingCard
-                        clubId={clubId}
-                        meeting={meeting}
-                        currentUser={currentUser}
-                        hideDate={true}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+          meetings.map((meeting) => (
+            <MeetingCard
+              key={meeting.id}
+              meeting={meeting}
+              clubId={clubId}
+              currentUserId={currentUserId}
+            />
           ))
         )}
       </div>
