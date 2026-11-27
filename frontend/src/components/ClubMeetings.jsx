@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { meetingsApi, integrationsApi } from "../api/client";
 import MeetingCard from "./MeetingCard";
-import { Plus, Calendar, Upload, X, Search } from "lucide-react";
+import { Plus, Calendar, Upload, X, Search, Tag } from "lucide-react";
+import { MeetingsListSkeleton } from "./LoadingSkeletons";
 
 export default function ClubMeetings({
   club,
@@ -97,7 +98,9 @@ export default function ClubMeetings({
   function handleSelectCatalogItem(item) {
     setTitle(item.title || title);
     setAuthor(item.author || author);
-    if (item.cover_url) setCoverUrl(item.cover_url);
+    if (item.coverUrl || item.cover_url) {
+      setCoverUrl(item.coverUrl || item.cover_url);
+    }
     setShowResults(false);
     setSearchResults([]);
   }
@@ -186,8 +189,41 @@ export default function ClubMeetings({
   }
 
   if (loading) {
-    return <p className="text-gray-500 text-sm">Carregando encontros...</p>;
+    return <MeetingsListSkeleton count={2} />;
   }
+
+  // 1. Ordena do encontro mais novo para o mais antigo
+  const sortedMeetings = [...meetings].sort(
+    (a, b) =>
+      new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime(),
+  );
+
+  // 2. Agrupa obras do mesmo encontro (mesma data/hora e mesmo tema)
+  const groupedMeetings = sortedMeetings.reduce((groups, meeting) => {
+    const normalizedTheme = (meeting.theme || "").trim().toLowerCase();
+    const dateKey = new Date(meeting.scheduled_at).toISOString().slice(0, 16);
+    const groupKey = `${dateKey}__${normalizedTheme}`;
+
+    const existingGroup = groups.find((g) => g.key === groupKey);
+    if (existingGroup) {
+      existingGroup.items.push(meeting);
+      if (
+        meeting.description &&
+        !existingGroup.descriptions.includes(meeting.description.trim())
+      ) {
+        existingGroup.descriptions.push(meeting.description.trim());
+      }
+    } else {
+      groups.push({
+        key: groupKey,
+        theme: (meeting.theme || "").trim(),
+        scheduled_at: meeting.scheduled_at,
+        descriptions: meeting.description ? [meeting.description.trim()] : [],
+        items: [meeting],
+      });
+    }
+    return groups;
+  }, []);
 
   return (
     <div>
@@ -289,37 +325,38 @@ export default function ClubMeetings({
                         Buscando no catálogo...
                       </p>
                     ) : (
-                      searchResults.map((item) => (
-                        <button
-                          key={`${item.external_source}-${item.external_id}`}
-                          type="button"
-                          onClick={() => handleSelectCatalogItem(item)}
-                          className="w-full text-left p-2 hover:bg-gray-50 flex items-center gap-2.5 border-b border-gray-100 last:border-b-0"
-                        >
-                          {item.cover_url ? (
-                            <img
-                              src={item.cover_url}
-                              alt={item.title}
-                              className="w-8 h-12 object-cover rounded shrink-0"
-                            />
-                          ) : (
-                            <div className="w-8 h-12 bg-gray-100 rounded shrink-0" />
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-semibold text-gray-900 truncate">
-                              {item.title}{" "}
-                              {item.release_year
-                                ? `(${item.release_year})`
-                                : ""}
-                            </p>
-                            {item.author && (
-                              <p className="text-[11px] text-gray-500 truncate">
-                                {item.author}
-                              </p>
+                      searchResults.map((item) => {
+                        const thumb = item.coverUrl || item.cover_url;
+                        const year = item.year || item.release_year;
+                        return (
+                          <button
+                            key={`${item.source || item.external_source}-${item.externalId || item.external_id}`}
+                            type="button"
+                            onClick={() => handleSelectCatalogItem(item)}
+                            className="w-full text-left p-2 hover:bg-gray-50 flex items-center gap-2.5 border-b border-gray-100 last:border-b-0"
+                          >
+                            {thumb ? (
+                              <img
+                                src={thumb}
+                                alt={item.title}
+                                className="w-8 h-12 object-cover rounded shrink-0"
+                              />
+                            ) : (
+                              <div className="w-8 h-12 bg-gray-100 rounded shrink-0" />
                             )}
-                          </div>
-                        </button>
-                      ))
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-semibold text-gray-900 truncate">
+                                {item.title} {year ? `(${year})` : ""}
+                              </p>
+                              {item.author && (
+                                <p className="text-[11px] text-gray-500 truncate">
+                                  {item.author}
+                                </p>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })
                     )}
                   </div>
                 )}
@@ -375,22 +412,70 @@ export default function ClubMeetings({
         </form>
       )}
 
-      <div className="space-y-4">
-        {meetings.length === 0 ? (
-          <p className="text-gray-500 text-sm bg-gray-50 p-6 rounded-xl text-center border border-gray-200">
-            Nenhum encontro agendado ainda.
-          </p>
-        ) : (
-          meetings.map((meeting) => (
-            <MeetingCard
-              key={meeting.id}
-              meeting={meeting}
-              clubId={clubId}
-              currentUserId={currentUser?.id}
-            />
-          ))
-        )}
-      </div>
+      {groupedMeetings.length === 0 ? (
+        <p className="text-gray-500 text-sm bg-gray-50 p-6 rounded-xl text-center border border-gray-200">
+          Nenhum encontro agendado ainda.
+        </p>
+      ) : (
+        <div className="space-y-6">
+          {groupedMeetings.map((group) => {
+            const isPast = new Date(group.scheduled_at) < new Date();
+            const groupDateFormatted = new Date(
+              group.scheduled_at,
+            ).toLocaleDateString("pt-BR", {
+              weekday: "long",
+              day: "2-digit",
+              month: "long",
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+
+            return (
+              <section
+                key={group.key}
+                className="bg-gray-50/80 border border-gray-200 rounded-xl p-4 sm:p-5 space-y-3"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-gray-200/80">
+                  <div>
+                    <h3 className="font-bold text-gray-900 text-base sm:text-lg flex items-center gap-2">
+                      <Tag size={16} className="text-gray-500 shrink-0" />
+                      <span>
+                        {group.theme ? `Tema: ${group.theme}` : "Encontro"}
+                      </span>
+                    </h3>
+                    <p className="text-xs sm:text-sm text-gray-500 capitalize mt-0.5">
+                      {groupDateFormatted}
+                    </p>
+                  </div>
+
+                  <span className="self-start sm:self-center text-[11px] bg-white text-gray-700 px-3 py-1 rounded-full font-medium border border-gray-200">
+                    {isPast ? "Passado" : "Em breve"}
+                  </span>
+                </div>
+
+                {group.descriptions.length > 0 && (
+                  <div className="bg-white text-gray-700 text-sm p-3 sm:p-3.5 rounded-lg border border-gray-200/80 whitespace-pre-wrap">
+                    {group.descriptions.join("\n\n")}
+                  </div>
+                )}
+
+                <div>
+                  {group.items.map((meeting) => (
+                    <MeetingCard
+                      key={meeting.id}
+                      meeting={meeting}
+                      clubId={clubId}
+                      clubType={club?.type}
+                      currentUserId={currentUser?.id}
+                      hideDate
+                    />
+                  ))}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

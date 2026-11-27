@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { reviewsApi } from "../api/client";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import CoverImage from "./CoverImage";
+import { ReviewsListSkeleton } from "./LoadingSkeletons";
 
-export default function MeetingCard({ clubId, meeting, hideDate = false }) {
+export default function MeetingCard({
+  clubId,
+  meeting,
+  clubType = "book",
+  hideDate = false,
+}) {
   const [expanded, setExpanded] = useState(false);
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -65,15 +72,15 @@ export default function MeetingCard({ clubId, meeting, hideDate = false }) {
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-3 sm:mb-4 overflow-hidden transition-all">
       <div
-        className="p-4 sm:p-5 cursor-pointer hover:bg-gray-50 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4 transition-colors"
+        className="p-4 sm:p-5 cursor-pointer hover:bg-gray-50 flex justify-between items-center gap-3 sm:gap-4 transition-colors"
         onClick={() => setExpanded((prev) => !prev)}
       >
         <div className="flex items-start sm:items-center gap-3.5 sm:gap-4 flex-1 min-w-0">
           {meeting.cover_url && (
-            <img
+            <CoverImage
               src={meeting.cover_url}
               alt={meeting.title}
-              className="w-14 h-20 sm:w-16 sm:h-24 object-cover rounded-md border border-gray-200 shrink-0 shadow-xs"
+              clubType={clubType}
             />
           )}
 
@@ -86,11 +93,6 @@ export default function MeetingCard({ clubId, meeting, hideDate = false }) {
                 </span>
               )}
             </h3>
-            {meeting.theme && (
-              <p className="text-xs text-gray-500 mt-0.5 truncate">
-                Tema: {meeting.theme}
-              </p>
-            )}
             {!hideDate && (
               <p className="text-xs sm:text-sm text-gray-500 capitalize mt-1">
                 {dateFormatted}
@@ -99,32 +101,15 @@ export default function MeetingCard({ clubId, meeting, hideDate = false }) {
           </div>
         </div>
 
-        <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto mt-1 sm:mt-0 shrink-0">
-          {isPast ? (
-            <span className="text-[10px] sm:text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full font-medium border border-gray-200">
-              Passado
-            </span>
-          ) : (
-            <span className="text-[10px] sm:text-xs bg-gray-100 text-gray-700 px-2.5 py-1 rounded-full font-medium border border-gray-200">
-              Em breve
-            </span>
-          )}
-          <span className="text-gray-400 p-1">
-            {expanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-          </span>
-        </div>
+        <span className="text-gray-400 p-1 shrink-0">
+          {expanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+        </span>
       </div>
 
       {expanded && (
         <div className="border-t border-gray-100 p-4 sm:p-5 bg-gray-50/50">
-          {meeting.description && (
-            <p className="text-gray-700 mb-4 sm:mb-5 whitespace-pre-wrap bg-white p-3 sm:p-4 rounded-lg border border-gray-100 text-sm">
-              {meeting.description}
-            </p>
-          )}
-
           {loading ? (
-            <p className="text-sm text-gray-500">Carregando resenhas...</p>
+            <ReviewsListSkeleton count={2} />
           ) : (
             <div className="max-w-3xl">
               <h4 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">

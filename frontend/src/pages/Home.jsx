@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { clubsApi } from "../api/client";
 import CreateClubModal from "../components/CreateClubModal";
 import JoinClubModal from "../components/JoinClubModal";
+import { ClubsGridSkeleton } from "../components/LoadingSkeletons";
 import { BookOpen, Film, Plus, LogIn } from "lucide-react";
 
 export default function Home() {
@@ -14,21 +15,28 @@ export default function Home() {
   const [showCreate, setShowCreate] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
 
-  const loadClubs = useCallback(async ({ showSpinner = false } = {}) => {
-    if (showSpinner) setLoading(true);
-    setError("");
-    try {
-      const { clubs: fetchedClubs } = await clubsApi.list();
-      setClubs(fetchedClubs);
-    } catch (err) {
-      setError(err.message || "Erro ao carregar clubes");
-    } finally {
-      if (showSpinner) setLoading(false);
-    }
-  }, []);
+  const loadClubs = useCallback(
+    async ({ showSpinner = false, signal } = {}) => {
+      if (showSpinner) setLoading(true);
+      setError("");
+      try {
+        const { clubs: fetchedClubs } = await clubsApi.list({ signal });
+        setClubs(fetchedClubs || []);
+      } catch (err) {
+        if (err?.name !== "AbortError") {
+          setError(err.message || "Erro ao carregar clubes");
+        }
+      } finally {
+        if (showSpinner) setLoading(false);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
-    loadClubs({ showSpinner: true });
+    const controller = new AbortController();
+    loadClubs({ showSpinner: true, signal: controller.signal });
+    return () => controller.abort();
   }, [loadClubs]);
 
   function handleCreated(club) {
@@ -95,8 +103,12 @@ export default function Home() {
           </div>
         </div>
 
-        {loading && <p className="text-gray-500">Carregando...</p>}
-        {error && <p className="text-red-600">{error}</p>}
+        {loading && <ClubsGridSkeleton count={3} />}
+        {!loading && error && (
+          <p className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg p-3">
+            {error}
+          </p>
+        )}
 
         {!loading && !error && clubs.length === 0 && (
           <div className="bg-white p-6 sm:p-8 rounded-lg shadow-sm border text-center">

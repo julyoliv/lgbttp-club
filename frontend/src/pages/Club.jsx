@@ -12,6 +12,7 @@ import {
   MessageSquare,
   Trash2,
 } from "lucide-react";
+import { ClubPageSkeleton } from "../components/LoadingSkeletons";
 
 export default function Club() {
   const { clubId } = useParams();
@@ -83,7 +84,7 @@ export default function Club() {
   }
 
   if (loading) {
-    return <div className="p-8 text-center text-gray-500">Carregando...</div>;
+    return <ClubPageSkeleton />;
   }
   if (error) {
     return <div className="p-8 text-center text-red-600">{error}</div>;

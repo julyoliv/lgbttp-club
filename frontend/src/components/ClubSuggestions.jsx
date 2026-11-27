@@ -14,6 +14,8 @@ import {
   Image as ImageIcon,
   Search,
 } from "lucide-react";
+import { MeetingsListSkeleton } from "./LoadingSkeletons";
+import CoverImage from "./CoverImage";
 
 export default function ClubSuggestions({
   clubId,
@@ -62,19 +64,31 @@ export default function ClubSuggestions({
     }
   }, [club]);
 
-  const loadSuggestions = useCallback(async () => {
-    try {
-      const { suggestions: fetched } = await suggestionsApi.list(clubId);
-      setSuggestions(fetched || []);
-    } catch (err) {
-      setError(err.message || "Erro ao carregar");
-    } finally {
-      setLoading(false);
-    }
-  }, [clubId]);
+  const loadSuggestions = useCallback(
+    async ({ showSpinner = true, signal } = {}) => {
+      if (showSpinner) setLoading(true);
+      try {
+        const { suggestions: fetched } = await suggestionsApi.list(clubId, {
+          signal,
+        });
+        setSuggestions(fetched || []);
+      } catch (err) {
+        if (err?.name !== "AbortError") {
+          setError(err.message || "Erro ao carregar");
+        }
+      } finally {
+        if (showSpinner && !signal?.aborted) {
+          setLoading(false);
+        }
+      }
+    },
+    [clubId],
+  );
 
   useEffect(() => {
-    loadSuggestions();
+    const controller = new AbortController();
+    loadSuggestions({ showSpinner: true, signal: controller.signal });
+    return () => controller.abort();
   }, [loadSuggestions]);
 
   // --- BUSCA COM DEBOUNCE E ABORTCONTROLLER ---
@@ -237,7 +251,7 @@ export default function ClubSuggestions({
       await suggestionsApi.reset(clubId);
       setPhase("suggesting");
       setTheme("");
-      await loadSuggestions();
+      await loadSuggestions({ showSpinner: false });
     } catch (err) {
       setActionError(err.message || "Erro ao reiniciar ciclo");
     }
@@ -263,7 +277,7 @@ export default function ClubSuggestions({
       });
       resetSuggestionForm();
       setShowForm(false);
-      await loadSuggestions();
+      await loadSuggestions({ showSpinner: false });
     } catch (err) {
       setActionError(err.message || "Erro ao criar");
     } finally {
@@ -302,7 +316,7 @@ export default function ClubSuggestions({
     setActionError("");
     try {
       await suggestionsApi.choose(clubId, suggestionId, status);
-      await loadSuggestions();
+      await loadSuggestions({ showSpinner: false });
     } catch (err) {
       setActionError(err.message || "Erro ao atualizar sugestão");
     }
@@ -318,7 +332,9 @@ export default function ClubSuggestions({
     onGoToMeeting(works);
   };
 
-  if (loading) return <p className="text-gray-500">Carregando...</p>;
+  if (loading) {
+    return <MeetingsListSkeleton count={3} />;
+  }
 
   const isBook = club?.type === "book";
   const activeSuggestions = suggestions.filter((s) => s.status === "open");
@@ -351,15 +367,14 @@ export default function ClubSuggestions({
       >
         <div className="flex flex-col sm:flex-row gap-4 w-full sm:flex-1">
           {/* IMAGEM CENTRALIZADA NO MOBILE E À ESQUERDA NO DESKTOP */}
-          {s.cover_url && (
-            <div className="w-24 h-36 shrink-0 rounded-md overflow-hidden border border-gray-200 shadow-sm mx-auto sm:mx-0">
-              <img
-                src={s.cover_url}
-                alt={s.title}
-                className="w-full h-full object-cover"
-              />
-            </div>
-          )}
+          <div className="mx-auto sm:mx-0">
+            <CoverImage
+              src={s.cover_url}
+              alt={s.title}
+              clubType={club?.type}
+              className="w-24 h-36"
+            />
+          </div>
 
           <div>
             <div className="flex items-start gap-2 flex-wrap mb-1">
@@ -674,17 +689,12 @@ export default function ClubSuggestions({
                       onClick={() => handleSelectSearchResult(item)}
                       className="w-full p-2.5 text-left hover:bg-gray-50 flex items-center gap-3 transition-colors"
                     >
-                      {item.coverUrl ? (
-                        <img
-                          src={item.coverUrl}
-                          alt={item.title}
-                          className="w-10 h-14 object-cover rounded border border-gray-200 shrink-0"
-                        />
-                      ) : (
-                        <div className="w-10 h-14 rounded border border-gray-200 bg-gray-100 flex items-center justify-center text-[10px] text-gray-400 shrink-0">
-                          Sem capa
-                        </div>
-                      )}
+                      <CoverImage
+                        src={item.coverUrl}
+                        alt={item.title}
+                        clubType={club?.type}
+                        className="w-10 h-14"
+                      />
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-gray-900 truncate">
                           {item.title}
@@ -772,10 +782,11 @@ export default function ClubSuggestions({
             />
             {imagePreview && (
               <div className="mt-4 flex items-center gap-4">
-                <img
+                <CoverImage
                   src={imagePreview}
                   alt="Preview"
-                  className="w-24 h-36 object-cover rounded-md border shadow-sm"
+                  clubType={club?.type}
+                  className="w-24 h-36"
                 />
                 <span className="text-xs text-green-600 font-medium">
                   {externalId

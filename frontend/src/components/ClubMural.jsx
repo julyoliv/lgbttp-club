@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { messagesApi } from "../api/client";
+import { MuralListSkeleton } from "./LoadingSkeletons";
 import { Send, Trash2, Edit2 } from "lucide-react";
 
 export default function ClubMural({ clubId, isOwner }) {
@@ -12,20 +13,39 @@ export default function ClubMural({ clubId, isOwner }) {
   const [editingId, setEditingId] = useState(null);
   const [editBody, setEditBody] = useState("");
 
-  const loadMessages = useCallback(async () => {
-    try {
-      const { messages: fetched } = await messagesApi.list(clubId);
-      setMessages(fetched || []);
-    } catch (err) {
-      setError(err.message || "Erro ao carregar recados");
-    } finally {
-      setLoading(false);
-    }
-  }, [clubId]);
-
   useEffect(() => {
-    loadMessages();
-  }, [loadMessages]);
+    if (!clubId) {
+      setLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setMessages([]);
+    setLoading(true);
+    setError("");
+
+    async function load() {
+      try {
+        const { messages: fetched } = await messagesApi.list(clubId, {
+          signal: controller.signal,
+        });
+        if (!controller.signal.aborted) {
+          setMessages(fetched || []);
+        }
+      } catch (err) {
+        if (!controller.signal.aborted && err?.name !== "AbortError") {
+          setError(err.message || "Erro ao carregar recados");
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    load();
+    return () => controller.abort();
+  }, [clubId]);
 
   async function handlePost(e) {
     e.preventDefault();
@@ -79,7 +99,9 @@ export default function ClubMural({ clubId, isOwner }) {
     }
   }
 
-  if (loading) return <p className="text-gray-500">Carregando mural...</p>;
+  if (loading) {
+    return <MuralListSkeleton count={3} />;
+  }
 
   return (
     <div className="space-y-6">
