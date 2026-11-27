@@ -68,23 +68,38 @@ export default function MeetingCard({ clubId, meeting, hideDate = false }) {
         className="p-4 sm:p-5 cursor-pointer hover:bg-gray-50 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4 transition-colors"
         onClick={() => setExpanded((prev) => !prev)}
       >
-        <div className="flex-1">
-          <h3 className="font-bold text-base sm:text-lg text-gray-800 flex flex-wrap items-baseline gap-1">
-            {meeting.title}
-            {meeting.author && (
-              <span className="font-normal text-sm text-gray-500">
-                {" "}
-                - {meeting.author}
-              </span>
-            )}
-          </h3>
-          {!hideDate && (
-            <p className="text-xs sm:text-sm text-gray-500 capitalize mt-1">
-              {dateFormatted}
-            </p>
+        <div className="flex items-start sm:items-center gap-3.5 sm:gap-4 flex-1 min-w-0">
+          {meeting.cover_url && (
+            <img
+              src={meeting.cover_url}
+              alt={meeting.title}
+              className="w-14 h-20 sm:w-16 sm:h-24 object-cover rounded-md border border-gray-200 shrink-0 shadow-xs"
+            />
           )}
+
+          <div className="flex-1 min-w-0">
+            <h3 className="font-bold text-base sm:text-lg text-gray-800 flex flex-wrap items-baseline gap-1">
+              <span>{meeting.title}</span>
+              {meeting.author && (
+                <span className="font-normal text-sm text-gray-500">
+                  - {meeting.author}
+                </span>
+              )}
+            </h3>
+            {meeting.theme && (
+              <p className="text-xs text-gray-500 mt-0.5 truncate">
+                Tema: {meeting.theme}
+              </p>
+            )}
+            {!hideDate && (
+              <p className="text-xs sm:text-sm text-gray-500 capitalize mt-1">
+                {dateFormatted}
+              </p>
+            )}
+          </div>
         </div>
-        <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto mt-2 sm:mt-0">
+
+        <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto mt-1 sm:mt-0 shrink-0">
           {isPast ? (
             <span className="text-[10px] sm:text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full font-medium border border-gray-200">
               Passado
