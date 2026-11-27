@@ -19,6 +19,7 @@ export default function ClubMeetings({
   const [error, setError] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(false);
 
+  const [queuedWorks, setQueuedWorks] = useState([]);
   const [title, setTitle] = useState("");
   const [author, setAuthor] = useState("");
   const [theme, setTheme] = useState("");
@@ -143,33 +144,90 @@ export default function ClubMeetings({
     reader.readAsDataURL(file);
   }
 
-  function resetForm() {
+  function resetWorkFields() {
     setTitle("");
     setAuthor("");
-    setTheme("");
     setCoverUrl("");
-    setScheduledAt("");
-    setDescription("");
     setShowResults(false);
     setSearchResults([]);
+  }
+
+  function resetForm() {
+    setQueuedWorks([]);
+    resetWorkFields();
+    setTheme("");
+    setScheduledAt("");
+    setDescription("");
+  }
+
+  function handleAddWorkToQueue() {
+    if (!title.trim()) {
+      setError(
+        isBook
+          ? "Informe o título do livro antes de adicionar."
+          : "Informe o título do filme antes de adicionar.",
+      );
+      return;
+    }
+
+    setError("");
+    setQueuedWorks((prev) => [
+      ...prev,
+      {
+        title: title.trim(),
+        author: author.trim() || null,
+        cover_url: coverUrl || null,
+      },
+    ]);
+    resetWorkFields();
+  }
+
+  function handleRemoveQueuedWork(indexToRemove) {
+    setQueuedWorks((prev) => prev.filter((_, idx) => idx !== indexToRemove));
   }
 
   async function handleCreateMeeting(e) {
     e.preventDefault();
     setError("");
+
+    const currentWork = title.trim()
+      ? [
+          {
+            title: title.trim(),
+            author: author.trim() || null,
+            cover_url: coverUrl || null,
+          },
+        ]
+      : [];
+
+    const worksToSave = [...queuedWorks, ...currentWork];
+
+    if (worksToSave.length === 0) {
+      setError(
+        isBook
+          ? "Adicione pelo menos um livro ao encontro."
+          : "Adicione pelo menos um filme ao encontro.",
+      );
+      return;
+    }
+
     setSubmitting(true);
 
     try {
       const isoDate = new Date(scheduledAt).toISOString();
+      const normalizedTheme = theme.trim() || null;
+      const normalizedDescription = description.trim() || null;
 
-      await meetingsApi.create(clubId, {
-        title: title.trim(),
-        author: author.trim() || null,
-        theme: theme.trim() || null,
-        cover_url: coverUrl || null,
-        scheduled_at: isoDate,
-        description: description.trim() || null,
-      });
+      for (const work of worksToSave) {
+        await meetingsApi.create(clubId, {
+          title: work.title,
+          author: work.author,
+          theme: normalizedTheme,
+          cover_url: work.cover_url,
+          scheduled_at: isoDate,
+          description: normalizedDescription,
+        });
+      }
 
       resetForm();
       setShowCreateForm(false);
@@ -224,6 +282,8 @@ export default function ClubMeetings({
     }
     return groups;
   }, []);
+
+  const totalWorksCount = queuedWorks.length + (title.trim() ? 1 : 0);
 
   return (
     <div>
@@ -301,10 +361,13 @@ export default function ClubMeetings({
               <div className="relative">
                 <input
                   type="text"
-                  required
                   placeholder={isBook ? "Título do Livro" : "Título do Filme"}
                   value={title}
                   onFocus={() => setShowResults(true)}
+                  onBlur={() => setTimeout(() => setShowResults(false), 150)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") setShowResults(false);
+                  }}
                   onChange={(e) => {
                     setTitle(e.target.value);
                     setShowResults(true);
@@ -379,6 +442,40 @@ export default function ClubMeetings({
             </div>
           </div>
 
+          {queuedWorks.length > 0 && (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2">
+              <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                Obras neste encontro ({queuedWorks.length})
+              </p>
+              <ul className="space-y-1.5">
+                {queuedWorks.map((work, idx) => (
+                  <li
+                    key={`${work.title}-${idx}`}
+                    className="flex items-center justify-between gap-2 bg-white px-3 py-2 rounded border border-gray-200 text-sm"
+                  >
+                    <div className="min-w-0">
+                      <span className="font-semibold text-gray-900">
+                        {work.title}
+                      </span>
+                      {work.author && (
+                        <span className="text-gray-500 text-xs ml-1.5">
+                          - {work.author}
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveQueuedWork(idx)}
+                      className="text-xs text-red-600 hover:text-red-700 font-medium shrink-0"
+                    >
+                      Remover
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <div className="pt-2 border-t border-gray-100 space-y-3">
             <div className="flex items-center gap-2 border border-gray-300 rounded-lg p-2 bg-white">
               <Calendar size={18} className="text-gray-400" />
@@ -400,13 +497,26 @@ export default function ClubMeetings({
             />
           </div>
 
-          <div className="flex justify-end">
+          <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2 pt-1">
+            <button
+              type="button"
+              onClick={handleAddWorkToQueue}
+              className="px-4 py-2 border border-gray-300 bg-white text-gray-800 rounded-lg hover:bg-gray-50 text-sm font-medium flex items-center justify-center gap-1.5 transition-colors"
+            >
+              <Plus size={15} />
+              {isBook ? "Adicionar outro livro" : "Adicionar outro filme"}
+            </button>
+
             <button
               type="submit"
               disabled={submitting}
               className="px-5 py-2 bg-gray-900 text-white rounded-lg hover:bg-black disabled:opacity-50 text-sm font-medium"
             >
-              {submitting ? "Salvando..." : "Salvar Encontro"}
+              {submitting
+                ? "Salvando..."
+                : totalWorksCount > 1
+                  ? `Salvar Encontro (${totalWorksCount})`
+                  : "Salvar Encontro"}
             </button>
           </div>
         </form>
