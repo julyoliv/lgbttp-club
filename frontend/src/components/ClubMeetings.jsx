@@ -4,13 +4,15 @@ import MeetingCard from "./MeetingCard";
 import { Plus, Calendar, Upload, X, Search } from "lucide-react";
 
 export default function ClubMeetings({
-  clubId,
-  clubType,
+  club,
   isOwner,
-  currentUserId,
-  prefilledWorks = [],
+  currentUser,
+  prefill = null,
   onClearPrefill,
 }) {
+  const clubId = club?.id;
+  const isBook = club?.type === "book";
+
   const [meetings, setMeetings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -24,41 +26,44 @@ export default function ClubMeetings({
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // Busca no catálogo (TMDb / Google Books)
   const [showResults, setShowResults] = useState(false);
   const [searchResults, setSearchResults] = useState([]);
   const [searchingCatalog, setSearchingCatalog] = useState(false);
 
-  const isBook = clubType === "book";
-
   useEffect(() => {
-    if (prefilledWorks && prefilledWorks.length > 0) {
-      const first = prefilledWorks[0];
-      setTitle(first.title || "");
-      setAuthor(first.author || "");
-      setCoverUrl(first.cover_url || "");
-      setShowCreateForm(true);
-    }
-  }, [prefilledWorks]);
+    const item = Array.isArray(prefill) ? prefill[0] : prefill;
+    if (!item) return;
 
-  async function fetchMeetings() {
+    setTitle(item.title || "");
+    setAuthor(item.author || "");
+    setCoverUrl(item.cover_url || "");
+    if (item.theme) setTheme(item.theme);
+    setShowCreateForm(true);
+  }, [prefill]);
+
+  async function fetchMeetings(signal) {
+    if (!clubId) return;
     try {
       setLoading(true);
-      const data = await meetingsApi.list(clubId);
+      const data = await meetingsApi.list(clubId, { signal });
       setMeetings(data.meetings || []);
     } catch (err) {
-      setError(err.message);
+      if (err?.name !== "AbortError") {
+        setError(err.message || "Erro ao carregar encontros");
+      }
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    fetchMeetings();
+    const controller = new AbortController();
+    fetchMeetings(controller.signal);
+    return () => controller.abort();
   }, [clubId]);
 
   useEffect(() => {
-    if (!showResults) return;
+    if (!showResults || !clubId) return;
 
     const query = title.trim();
     if (query.length < 2) {
@@ -75,7 +80,7 @@ export default function ClubMeetings({
         });
         setSearchResults(data.results || []);
       } catch (err) {
-        if (err.name !== "AbortError") {
+        if (err?.name !== "AbortError") {
           setSearchResults([]);
         }
       } finally {
@@ -165,10 +170,10 @@ export default function ClubMeetings({
 
       resetForm();
       setShowCreateForm(false);
-      if (onClearPrefill) onClearPrefill();
+      onClearPrefill?.();
       fetchMeetings();
     } catch (err) {
-      setError(err.message);
+      setError(err.message || "Erro ao criar encontro");
     } finally {
       setSubmitting(false);
     }
@@ -177,7 +182,7 @@ export default function ClubMeetings({
   function handleCancelCreate() {
     setShowCreateForm(false);
     resetForm();
-    if (onClearPrefill) onClearPrefill();
+    onClearPrefill?.();
   }
 
   if (loading) {
@@ -218,14 +223,13 @@ export default function ClubMeetings({
           onSubmit={handleCreateMeeting}
           className="bg-white p-5 rounded-xl border border-gray-200 mb-6 space-y-4 shadow-sm"
         >
-          {prefilledWorks?.length > 0 && (
+          {prefill && (
             <div className="bg-green-50 text-green-800 text-xs p-2.5 rounded-lg border border-green-200">
               Obra importada das sugestões. Escolha a data para confirmar.
             </div>
           )}
 
           <div className="flex flex-col sm:flex-row gap-4 items-start bg-gray-50 p-3.5 rounded-lg border border-gray-100">
-            {/* Upload e preview da capa */}
             <div className="shrink-0 mx-auto sm:mx-0">
               {coverUrl ? (
                 <div className="relative w-24 h-36 rounded-md overflow-hidden border border-gray-200 shadow-sm">
@@ -257,7 +261,6 @@ export default function ClubMeetings({
               )}
             </div>
 
-            {/* Campos da obra */}
             <div className="flex-1 space-y-2.5 w-full relative">
               <div className="relative">
                 <input
@@ -383,7 +386,7 @@ export default function ClubMeetings({
               key={meeting.id}
               meeting={meeting}
               clubId={clubId}
-              currentUserId={currentUserId}
+              currentUserId={currentUser?.id}
             />
           ))
         )}

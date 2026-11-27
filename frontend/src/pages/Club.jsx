@@ -60,8 +60,7 @@ export default function Club() {
   }, [clubId]);
 
   function handleGoToMeeting(data) {
-    const prefillArray = Array.isArray(data) ? data : [data];
-    setMeetingPrefill(prefillArray);
+    setMeetingPrefill(data);
     setActiveTab("meetings");
   }
 
@@ -180,12 +179,11 @@ export default function Club() {
         <div>
           {activeTab === "meetings" && (
             <ClubMeetings
-              clubId={club.id}
+              club={club}
               isOwner={club.role === "owner"}
               currentUser={user}
-              prefilledMeeting={meetingPrefill}
-              clearPrefill={() => setMeetingPrefill(null)}
-              club={club}
+              prefill={meetingPrefill}
+              onClearPrefill={() => setMeetingPrefill(null)}
             />
           )}
           {activeTab === "suggestions" && (
